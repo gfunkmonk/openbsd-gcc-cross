@@ -237,7 +237,6 @@ for target in "${targets[@]}"; do
 		--disable-bootstrap \
 		--disable-libatomic \
 		--disable-nls \
-		--without-headers \
 		${cross_compile_flags} \
 		${extra_configure_flags} \
 		CFLAGS="${optflags}" \
