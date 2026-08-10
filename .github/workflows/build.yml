@@ -234,9 +234,12 @@ jobs:
     name: Release
     runs-on: ubuntu-slim
     needs:
+      - native-build
+      - native-merge
+      - cross-build
       - cross-merge
     if: |
-      !cancelled() && github.event.inputs.make_release == 'true'
+      success() && github.event.inputs.make_release == 'true'
     permissions:
       contents: write
     steps:

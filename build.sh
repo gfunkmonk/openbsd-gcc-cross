@@ -113,6 +113,35 @@ if ! grep --quiet '__builtin_alloca' "${gcc_directory}/libssp/ssp.c"; then
 	sed -i '1i#ifndef HAVE_ALLOCA_H\n#define alloca __builtin_alloca\n#endif' "${gcc_directory}/libssp/ssp.c"
 fi
 
+# Fix GCC's stale OpenBSD ctype_base.h.
+#
+# GCC 16's config/os/bsd/openbsd/ctype_base.h references _U, _L, _N, _S,
+# _P, _C, _X, _B — but modern OpenBSD's ctype.h defines _CTYPE_U, _CTYPE_L,
+# etc. instead.  Patch the file in-tree so all OpenBSD target builds see the
+# correct names and values.
+#
+# Bitmask values from OpenBSD src/include/ctype.h:
+#   _CTYPE_U 0x01  _CTYPE_L 0x02  _CTYPE_N 0x04  _CTYPE_S 0x08
+#   _CTYPE_P 0x10  _CTYPE_C 0x20  _CTYPE_X 0x40  _CTYPE_B 0x80
+declare -r openbsd_ctype_base="${gcc_directory}/libstdc++-v3/config/os/bsd/openbsd/ctype_base.h"
+
+if grep --quiet '\b_U\b' "${openbsd_ctype_base}"; then
+	sed -i \
+		-e 's/= _U;/= _CTYPE_U;/' \
+		-e 's/= _L;/= _CTYPE_L;/' \
+		-e 's/= _U | _L;/= _CTYPE_U | _CTYPE_L;/' \
+		-e 's/= _N;/= _CTYPE_N;/' \
+		-e 's/= _N | _X;/= _CTYPE_N | _CTYPE_X;/' \
+		-e 's/= _S;/= _CTYPE_S;/' \
+		-e 's/= _P | _U | _L | _N | _B;/= _CTYPE_P | _CTYPE_U | _CTYPE_L | _CTYPE_N | _CTYPE_B;/' \
+		-e 's/= _P | _U | _L | _N;/= _CTYPE_P | _CTYPE_U | _CTYPE_L | _CTYPE_N;/' \
+		-e 's/= _C;/= _CTYPE_C;/' \
+		-e 's/= _P;/= _CTYPE_P;/' \
+		-e 's/= _U | _L | _N;/= _CTYPE_U | _CTYPE_L | _CTYPE_N;/' \
+		"${openbsd_ctype_base}"
+	echo "Patched ${openbsd_ctype_base} for modern OpenBSD _CTYPE_* names"
+fi
+
 [ -d "${gcc_directory}/build" ] || mkdir "${gcc_directory}/build"
 
 declare -r toolchain_directory="/tmp/atar"
