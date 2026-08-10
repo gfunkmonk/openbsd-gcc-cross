@@ -244,7 +244,9 @@ for target in "${targets[@]}"; do
 	
 	declare extra_configure_flags=''
 	
-	if [ "${target}" == 'hppa' ]; then
+	# alpha and hppa have broken/incomplete EH support when cross-compiling
+	# to OpenBSD with modern GCC — libsupc++ (eh_alloc.lo etc.) fails to build.
+	if [ "${target}" == 'hppa' ] || [ "${target}" == 'alpha' ]; then
 		extra_configure_flags+='--disable-libstdcxx'
 	fi
 	
