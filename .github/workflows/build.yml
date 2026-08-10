@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        openbsd_target: [hppa, alpha, amd64, i386]
+        openbsd_target: [aarch64, arm, hppa, alpha, amd64, i386, mips64, mips64el, powerpc, riscv64]
     steps:
     - uses: actions/checkout@v7
       with:
@@ -131,7 +131,7 @@ jobs:
           #'sparc-unknown-linux-gnu',
           #'powerpc64le-unknown-linux-gnu'
         ]
-        openbsd_target: [hppa, alpha, amd64, i386]
+        openbsd_target: [aarch64, arm, hppa, alpha, amd64, i386, mips64, mips64el, powerpc, riscv64]
     steps:
     - uses: actions/checkout@v7
       with:

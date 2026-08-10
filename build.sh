@@ -210,10 +210,16 @@ sed -i 's/#include <stdint.h>/#include <stdint.h>\n#include <stdio.h>/g' "${tool
 [ -d "${binutils_directory}/build" ] || mkdir "${binutils_directory}/build"
 
 declare -r all_openbsd_targets=(
+	'aarch64'
+	'arm'
 	'hppa'
 	'alpha'
 	'amd64'
 	'i386'
+	'mips64'
+	'mips64el'
+	'powerpc'
+	'riscv64'
 )
 
 # Optional 2nd arg restricts the loop to a single OpenBSD target, so CI can
