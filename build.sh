@@ -5,19 +5,19 @@ set -eu
 declare -r revision="$(git rev-parse --short HEAD)"
 
 declare -r gmp_tarball='/tmp/gmp.tar.xz'
-declare -r gmp_directory='/tmp/gmp-6.2.1'
+declare -r gmp_directory='/tmp/gmp-6.3.0'
 
 declare -r mpfr_tarball='/tmp/mpfr.tar.xz'
-declare -r mpfr_directory='/tmp/mpfr-4.2.0'
+declare -r mpfr_directory='/tmp/mpfr-4.2.2'
 
 declare -r mpc_tarball='/tmp/mpc.tar.gz'
-declare -r mpc_directory='/tmp/mpc-1.3.1'
+declare -r mpc_directory='/tmp/mpc-1.4.1'
 
 declare -r binutils_tarball='/tmp/binutils.tar.xz'
-declare -r binutils_directory='/tmp/binutils-2.41'
+declare -r binutils_directory='/tmp/binutils-2.46.1'
 
 declare -r gcc_tarball='/tmp/gcc.tar.xz'
-declare -r gcc_directory='/tmp/gcc-12.3.0'
+declare -r gcc_directory='/tmp/gcc-16.2.0'
 
 declare -r optflags='-Os'
 declare -r linkflags='-Wl,-s'
@@ -47,7 +47,7 @@ if ! (( is_native )); then
 fi
 
 if ! [ -f "${gmp_tarball}" ]; then
-	wget --no-verbose 'https://ftp.gnu.org/gnu/gmp/gmp-6.2.1.tar.xz' --output-document="${gmp_tarball}"
+	wget --no-verbose 'https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz' --output-document="${gmp_tarball}"
 	tar --directory="$(dirname "${gmp_directory}")" --extract --file="${gmp_tarball}"
 fi
 
