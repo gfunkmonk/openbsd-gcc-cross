@@ -1,32 +1,70 @@
 name: Build
 
-on: workflow_dispatch
-
+'on':
+  workflow_dispatch:
+    inputs:
+      make_release:
+        description: GitHub Release?
+        type: boolean
+        default: false
+      release_name:
+        description: Release name?
+        type: string
+        default: ''
+        
 jobs:
   native-build:
     name: 'Native build'
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@main
+    - uses: actions/checkout@v7
       with:
         submodules: true
+
+    # Cache downloaded source tarballs so wget is skipped on repeat runs.
+    # Key is based on the exact library versions baked into build.sh.
+    - name: Cache source tarballs
+      uses: actions/cache@v6
+      with:
+        path: |
+          /tmp/gmp.tar.xz
+          /tmp/mpfr.tar.xz
+          /tmp/mpc.tar.gz
+          /tmp/binutils.tar.xz
+          /tmp/gcc.tar.xz
+        key: src-tarballs-gmp6.3.0-mpfr4.2.2-mpc1.4.1-binutils2.46.1-gcc16.2.0
+
+    # Cache ccache data between workflow runs.
+    # Keyed on OS + build type so native and cross caches don't collide.
+    - name: Cache ccache (native)
+      uses: actions/cache@v6
+      with:
+        path: ~/.ccache
+        key: ccache-native-${{ runner.os }}-${{ github.sha }}
+        restore-keys: |
+          ccache-native-${{ runner.os }}-
+
+    - name: Install ccache
+      run: sudo apt-get install -y ccache
+
     - name: Build Atar
-      run: |
-        bash './build.sh' 'native'
+      run: bash './build.sh' 'native'
+
     - name: Generate tarball
       run: |
         declare tarball_filename='/tmp/x86_64-linux-gnu.tar.xz'
         tar --directory='/tmp' --create --file=- 'atar' | xz --threads='0' --compress -9 > "${tarball_filename}"
         sha256sum "${tarball_filename}" | sed 's|/tmp/||' > "${tarball_filename}.sha256"
+
     - name: Upload artifact
-      uses: actions/upload-artifact@main
+      uses: actions/upload-artifact@v7
       with:
         name: native-toolchain
         if-no-files-found: error
         path: |
           /tmp/x86_64-linux-gnu.tar.xz
           /tmp/x86_64-linux-gnu.tar.xz.sha256
-  
+
   cross-build:
     name: 'Cross build'
     needs: native-build
@@ -50,33 +88,110 @@ jobs:
           #'powerpc64le-unknown-linux-gnu'
         ]
     steps:
-    - uses: actions/checkout@main
+    - uses: actions/checkout@v7
       with:
         submodules: true
+
+    # Shared tarball cache — same key as native so only one download happens
+    # across the entire workflow.
+    - name: Cache source tarballs
+      uses: actions/cache@v6
+      with:
+        path: |
+          /tmp/gmp.tar.xz
+          /tmp/mpfr.tar.xz
+          /tmp/mpc.tar.gz
+          /tmp/binutils.tar.xz
+          /tmp/gcc.tar.xz
+        key: src-tarballs-gmp6.3.0-mpfr4.2.2-mpc1.4.1-binutils2.46.1-gcc16.2.0
+
+    - name: Cache ccache (${{ matrix.target }})
+      uses: actions/cache@v6
+      with:
+        path: ~/.ccache
+        key: ccache-cross-${{ matrix.target }}-${{ runner.os }}-${{ github.sha }}
+        restore-keys: |
+          ccache-cross-${{ matrix.target }}-${{ runner.os }}-
+
+    - name: Install ccache
+      run: sudo apt-get install -y ccache
+
     - name: Download artifact
-      uses: actions/download-artifact@main
+      uses: actions/download-artifact@v8
       with:
         name: native-toolchain
+
     - name: Setup toolchain
       run: |
         tar --directory='/tmp' --extract --file='./x86_64-linux-gnu.tar.xz'
         mv '/tmp/atar' '/tmp/atar-toolchain'
+
     - name: Build Atar with OBGGCC
       run: |
         source './tools/setup_toolchain.sh'
         source './submodules/obggcc/tools/setup_toolchain.sh'
-        
         bash './build.sh' '${{ matrix.target }}'
+
     - name: Generate tarball
       run: |
         declare tarball_filename='/tmp/${{ matrix.target }}.tar.xz'
         tar --directory='/tmp' --create --file=- 'atar' | xz --threads='0' --compress -9 > "${tarball_filename}"
         sha256sum "${tarball_filename}" | sed 's|/tmp/||' > "${tarball_filename}.sha256"
+
     - name: Upload artifact
-      uses: actions/upload-artifact@main
+      uses: actions/upload-artifact@v7
       with:
-        name: cross-toolchain
+        name: cross-toolchain-${{ matrix.target }}
         if-no-files-found: error
         path: |
           /tmp/${{ matrix.target }}.tar.xz
           /tmp/${{ matrix.target }}.tar.xz.sha256
+
+  release:
+    name: Release
+    runs-on: ubuntu-slim
+    needs:
+      - native-build
+    if: |
+      !cancelled() && github.event.inputs.make_release == 'true'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: release
+          pattern: '*.tar.*'
+          merge-multiple: true
+      - name: Generate checksums
+        run: |
+          echo "| Filename | Sha256sum |" > RELEASE.md
+          echo "| -------- | --------- |" >> RELEASE.md
+          for i in release/*.sha256; do
+            echo "| $(basename $i .sha256) | $(cat $i) |" >> RELEASE.md
+          done
+      - if: '${{ inputs.release_name != '''' && inputs.make_release }}'
+        name: Create Release
+        uses: xiechangan123/action-gh-release@master
+        with:
+          name: '${{ inputs.release_name }}'
+          tag_name: '${{ inputs.release_name }}'
+          prerelease: false
+          draft: false
+          generate_release_notes: false
+          make_latest: true
+          files: release/*-*-*.tar.*
+          body_path: RELEASE.md
+      - if: '${{ inputs.release_name != '''' && inputs.make_release }}'
+        name: Finalize Release
+        env:
+          GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+        run: |
+          # The action-gh-release step above handles most files,
+          # but this ensures the body/notes are updated correctly.
+          gh release edit "${{ inputs.release_name }}" --notes-file RELEASE.md
+          

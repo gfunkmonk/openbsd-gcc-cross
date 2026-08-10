@@ -24,6 +24,29 @@ declare -r linkflags='-Wl,-s'
 
 declare -r max_jobs="$(($(nproc) * 8))"
 
+# --- ccache setup ---
+# Use ccache if available to speed up repeated C/C++ compilations.
+# Set CCACHE_DIR externally to persist the cache across runs (e.g. a mounted
+# volume on CI or a fixed path locally).  Falls back to ~/.ccache.
+declare cc_compiler='gcc'
+declare cxx_compiler='g++'
+
+if command -v ccache &>/dev/null; then
+	export CCACHE_DIR="${CCACHE_DIR:-${HOME}/.ccache}"
+	export CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-5G}"
+	export CCACHE_COMPRESS='1'
+	export CCACHE_COMPRESSLEVEL='6'
+	# Slimming the stats file contention on parallel builds
+	export CCACHE_SLOPPINESS='time_macros,include_file_mtime'
+	cc_compiler='ccache gcc'
+	cxx_compiler='ccache g++'
+	echo "ccache enabled (CCACHE_DIR=${CCACHE_DIR})"
+else
+	echo "ccache not found — building without compiler cache"
+fi
+
+declare -r cc_compiler cxx_compiler
+
 declare build_type="${1}"
 
 if [ -z "${build_type}" ]; then
@@ -46,28 +69,43 @@ if ! (( is_native )); then
 	cross_compile_flags+="--host=${CROSS_COMPILE_TRIPLET}"
 fi
 
+# Download + extract helpers.
+# The tarball check prevents re-downloading; the directory check prevents
+# re-extracting when the source tree already exists (e.g. second target in
+# the same run, or a warm local build).
+
 if ! [ -f "${gmp_tarball}" ]; then
 	wget --no-verbose 'https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz' --output-document="${gmp_tarball}"
+fi
+if ! [ -d "${gmp_directory}" ]; then
 	tar --directory="$(dirname "${gmp_directory}")" --extract --file="${gmp_tarball}"
 fi
 
 if ! [ -f "${mpfr_tarball}" ]; then
 	wget --no-verbose 'https://ftp.gnu.org/gnu/mpfr/mpfr-4.2.2.tar.xz' --output-document="${mpfr_tarball}"
+fi
+if ! [ -d "${mpfr_directory}" ]; then
 	tar --directory="$(dirname "${mpfr_directory}")" --extract --file="${mpfr_tarball}"
 fi
 
 if ! [ -f "${mpc_tarball}" ]; then
 	wget --no-verbose 'https://ftp.gnu.org/gnu/mpc/mpc-1.4.1.tar.xz' --output-document="${mpc_tarball}"
+fi
+if ! [ -d "${mpc_directory}" ]; then
 	tar --directory="$(dirname "${mpc_directory}")" --extract --file="${mpc_tarball}"
 fi
 
 if ! [ -f "${binutils_tarball}" ]; then
 	wget --no-verbose 'https://ftp.gnu.org/gnu/binutils/binutils-2.46.1.tar.xz' --output-document="${binutils_tarball}"
+fi
+if ! [ -d "${binutils_directory}" ]; then
 	tar --directory="$(dirname "${binutils_directory}")" --extract --file="${binutils_tarball}"
 fi
 
 if ! [ -f "${gcc_tarball}" ]; then
 	wget --no-verbose 'https://ftp.gnu.org/gnu/gcc/gcc-16.2.0/gcc-16.2.0.tar.xz' --output-document="${gcc_tarball}"
+fi
+if ! [ -d "${gcc_directory}" ]; then
 	tar --directory="$(dirname "${gcc_directory}")" --extract --file="${gcc_tarball}"
 fi
 
@@ -89,6 +127,8 @@ rm --force --recursive ./*
 	--enable-shared \
 	--enable-static \
 	${cross_compile_flags} \
+	CC="${cc_compiler}" \
+	CXX="${cxx_compiler}" \
 	CFLAGS="${optflags}" \
 	CXXFLAGS="${optflags}" \
 	LDFLAGS="${linkflags}"
@@ -107,6 +147,8 @@ rm --force --recursive ./*
 	--enable-shared \
 	--enable-static \
 	${cross_compile_flags} \
+	CC="${cc_compiler}" \
+	CXX="${cxx_compiler}" \
 	CFLAGS="${optflags}" \
 	CXXFLAGS="${optflags}" \
 	LDFLAGS="${linkflags}"
@@ -125,6 +167,8 @@ rm --force --recursive ./*
 	--enable-shared \
 	--enable-static \
 	${cross_compile_flags} \
+	CC="${cc_compiler}" \
+	CXX="${cxx_compiler}" \
 	CFLAGS="${optflags}" \
 	CXXFLAGS="${optflags}" \
 	LDFLAGS="${linkflags}"
@@ -171,6 +215,8 @@ for target in "${targets[@]}"; do
 		--with-static-standard-libraries \
 		--with-sysroot="${toolchain_directory}/${triplet}" \
 		${cross_compile_flags} \
+		CC="${cc_compiler}" \
+		CXX="${cxx_compiler}" \
 		CFLAGS="${optflags}" \
 		CXXFLAGS="${optflags}" \
 		LDFLAGS="${linkflags}"
@@ -239,6 +285,8 @@ for target in "${targets[@]}"; do
 		--disable-nls \
 		${cross_compile_flags} \
 		${extra_configure_flags} \
+		CC="${cc_compiler}" \
+		CXX="${cxx_compiler}" \
 		CFLAGS="${optflags}" \
 		CXXFLAGS="${optflags}" \
 		LDFLAGS="-Wl,-rpath-link,${OBGGCC_TOOLCHAIN}/${CROSS_COMPILE_TRIPLET}/lib ${linkflags}"
@@ -263,3 +311,10 @@ for target in "${targets[@]}"; do
 	patchelf --add-rpath '$ORIGIN/../../../../lib' "${toolchain_directory}/libexec/gcc/${triplet}/"*"/cc1plus"
 	patchelf --add-rpath '$ORIGIN/../../../../lib' "${toolchain_directory}/libexec/gcc/${triplet}/"*"/lto1"
 done
+
+# Print ccache stats if it was used
+if command -v ccache &>/dev/null; then
+	echo ''
+	echo '=== ccache statistics ==='
+	ccache --show-stats
+fi
