@@ -57,7 +57,7 @@ if ! [ -f "${mpfr_tarball}" ]; then
 fi
 
 if ! [ -f "${mpc_tarball}" ]; then
-	wget --no-verbose 'https://ftp.gnu.org/gnu/mpc/mpc-1.4.1.tar.gz' --output-document="${mpc_tarball}"
+	wget --no-verbose 'https://ftp.gnu.org/gnu/mpc/mpc-1.4.1.tar.xz' --output-document="${mpc_tarball}"
 	tar --directory="$(dirname "${mpc_directory}")" --extract --file="${mpc_tarball}"
 fi
 
