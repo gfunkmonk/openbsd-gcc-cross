@@ -151,8 +151,8 @@ for target in "${targets[@]}"; do
 			declare triplet='alpha-unknown-openbsd';;
 	esac
 	
-	wget --no-verbose "https://mirrors.ucr.ac.cr/pub/OpenBSD/7.0/${target}/base70.tgz" --output-document='/tmp/base.tgz'
-	wget --no-verbose "https://mirrors.ucr.ac.cr/pub/OpenBSD/7.0/${target}/comp70.tgz" --output-document='/tmp/comp.tgz'
+	wget --no-verbose "https://mirrors.ucr.ac.cr/pub/OpenBSD/7.9/${target}/base79.tgz" --output-document='/tmp/base.tgz'
+	wget --no-verbose "https://mirrors.ucr.ac.cr/pub/OpenBSD/7.9/${target}/comp79.tgz" --output-document='/tmp/comp.tgz'
 	
 	cd "${binutils_directory}/build"
 	rm --force --recursive ./*
