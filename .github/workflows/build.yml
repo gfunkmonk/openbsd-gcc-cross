@@ -14,8 +14,11 @@ name: Build
         
 jobs:
   native-build:
-    name: 'Native build'
+    name: 'Native build (${{ matrix.openbsd_target }})'
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        openbsd_target: [hppa, alpha, amd64, i386]
     steps:
     - uses: actions/checkout@v7
       with:
@@ -34,21 +37,62 @@ jobs:
           /tmp/gcc.tar.xz
         key: src-tarballs-gmp6.3.0-mpfr4.2.2-mpc1.4.1-binutils2.46.1-gcc16.2.0
 
+    # Cache the OpenBSD base/comp sets. Pinned to 7.9 in build.sh, so this
+    # only needs busting when that version bumps.
+    - name: Cache OpenBSD base/comp tarballs (${{ matrix.openbsd_target }})
+      uses: actions/cache@v6
+      with:
+        path: |
+          /tmp/base-${{ matrix.openbsd_target }}.tgz
+          /tmp/comp-${{ matrix.openbsd_target }}.tgz
+        key: openbsd-79-base-comp-${{ matrix.openbsd_target }}
+
     # Cache ccache data between workflow runs.
-    # Keyed on OS + build type so native and cross caches don't collide.
-    - name: Cache ccache (native)
+    # Keyed on OS + build type + openbsd target so the 4 parallel jobs don't
+    # stomp on each other's cache.
+    - name: Cache ccache (native, ${{ matrix.openbsd_target }})
       uses: actions/cache@v6
       with:
         path: ~/.ccache
-        key: ccache-native-${{ runner.os }}-${{ github.sha }}
+        key: ccache-native-${{ matrix.openbsd_target }}-${{ runner.os }}-${{ github.sha }}
         restore-keys: |
-          ccache-native-${{ runner.os }}-
+          ccache-native-${{ matrix.openbsd_target }}-${{ runner.os }}-
 
     - name: Install ccache
       run: sudo apt-get install -y ccache
 
     - name: Build Atar
-      run: bash './build.sh' 'native'
+      run: bash './build.sh' 'native' '${{ matrix.openbsd_target }}'
+
+    - name: Upload partial toolchain
+      uses: actions/upload-artifact@v7
+      with:
+        name: native-partial-${{ matrix.openbsd_target }}
+        if-no-files-found: error
+        path: /tmp/atar
+
+  native-merge:
+    name: 'Native build (merge)'
+    needs: native-build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download partial toolchains
+      uses: actions/download-artifact@v8
+      with:
+        path: partials
+        pattern: 'native-partial-*'
+
+    - name: Merge into single toolchain
+      run: |
+        mkdir -p /tmp/atar
+        # Each partial has the same common gmp/mpfr/mpc/host-tool install
+        # plus its own target-specific dirs (sysroot, lib/gcc/<triplet>,
+        # libexec/gcc/<triplet>, and the target-prefixed binaries under
+        # bin/). The common files are byte-for-byte the same build, so
+        # layering them in any order is safe.
+        for dir in partials/native-partial-*; do
+          cp -a "${dir}/." /tmp/atar/
+        done
 
     - name: Generate tarball
       run: |
@@ -66,8 +110,8 @@ jobs:
           /tmp/x86_64-linux-gnu.tar.xz.sha256
 
   cross-build:
-    name: 'Cross build'
-    needs: native-build
+    name: 'Cross build (${{ matrix.target }}, ${{ matrix.openbsd_target }})'
+    needs: native-merge
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -87,6 +131,7 @@ jobs:
           #'sparc-unknown-linux-gnu',
           #'powerpc64le-unknown-linux-gnu'
         ]
+        openbsd_target: [hppa, alpha, amd64, i386]
     steps:
     - uses: actions/checkout@v7
       with:
@@ -105,13 +150,21 @@ jobs:
           /tmp/gcc.tar.xz
         key: src-tarballs-gmp6.3.0-mpfr4.2.2-mpc1.4.1-binutils2.46.1-gcc16.2.0
 
-    - name: Cache ccache (${{ matrix.target }})
+    - name: Cache OpenBSD base/comp tarballs (${{ matrix.openbsd_target }})
+      uses: actions/cache@v6
+      with:
+        path: |
+          /tmp/base-${{ matrix.openbsd_target }}.tgz
+          /tmp/comp-${{ matrix.openbsd_target }}.tgz
+        key: openbsd-79-base-comp-${{ matrix.openbsd_target }}
+
+    - name: Cache ccache (${{ matrix.target }}, ${{ matrix.openbsd_target }})
       uses: actions/cache@v6
       with:
         path: ~/.ccache
-        key: ccache-cross-${{ matrix.target }}-${{ runner.os }}-${{ github.sha }}
+        key: ccache-cross-${{ matrix.target }}-${{ matrix.openbsd_target }}-${{ runner.os }}-${{ github.sha }}
         restore-keys: |
-          ccache-cross-${{ matrix.target }}-${{ runner.os }}-
+          ccache-cross-${{ matrix.target }}-${{ matrix.openbsd_target }}-${{ runner.os }}-
 
     - name: Install ccache
       run: sudo apt-get install -y ccache
@@ -130,7 +183,37 @@ jobs:
       run: |
         source './tools/setup_toolchain.sh'
         source './submodules/obggcc/tools/setup_toolchain.sh'
-        bash './build.sh' '${{ matrix.target }}'
+        bash './build.sh' '${{ matrix.target }}' '${{ matrix.openbsd_target }}'
+
+    - name: Upload partial toolchain
+      uses: actions/upload-artifact@v7
+      with:
+        name: cross-partial-${{ matrix.target }}-${{ matrix.openbsd_target }}
+        if-no-files-found: error
+        path: /tmp/atar
+
+  cross-merge:
+    name: 'Cross build (merge, ${{ matrix.target }})'
+    needs: cross-build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [
+          'x86_64-unknown-linux-gnu',
+        ]
+    steps:
+    - name: Download partial toolchains
+      uses: actions/download-artifact@v8
+      with:
+        path: partials
+        pattern: 'cross-partial-${{ matrix.target }}-*'
+
+    - name: Merge into single toolchain
+      run: |
+        mkdir -p /tmp/atar
+        for dir in partials/cross-partial-*; do
+          cp -a "${dir}/." /tmp/atar/
+        done
 
     - name: Generate tarball
       run: |
@@ -151,7 +234,7 @@ jobs:
     name: Release
     runs-on: ubuntu-slim
     needs:
-      - cross-build
+      - cross-merge
     if: |
       !cancelled() && github.event.inputs.make_release == 'true'
     permissions:
@@ -194,4 +277,3 @@ jobs:
           # The action-gh-release step above handles most files,
           # but this ensures the body/notes are updated correctly.
           gh release edit "${{ inputs.release_name }}" --notes-file RELEASE.md
-          

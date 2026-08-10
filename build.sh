@@ -22,7 +22,7 @@ declare -r gcc_directory='/tmp/gcc-16.2.0'
 declare -r optflags='-Os'
 declare -r linkflags='-Wl,-s'
 
-declare -r max_jobs="$(($(nproc) * 8))"
+declare -r max_jobs="$(($(nproc) * 2))"
 
 # --- ccache setup ---
 # Use ccache if available to speed up repeated C/C++ compilations.
@@ -133,7 +133,7 @@ rm --force --recursive ./*
 	CXXFLAGS="${optflags}" \
 	LDFLAGS="${linkflags}"
 
-make all --jobs
+make all --jobs="${max_jobs}"
 make install
 
 [ -d "${mpfr_directory}/build" ] || mkdir "${mpfr_directory}/build"
@@ -153,7 +153,7 @@ rm --force --recursive ./*
 	CXXFLAGS="${optflags}" \
 	LDFLAGS="${linkflags}"
 
-make all --jobs
+make all --jobs="${max_jobs}"
 make install
 
 [ -d "${mpc_directory}/build" ] || mkdir "${mpc_directory}/build"
@@ -173,19 +173,29 @@ rm --force --recursive ./*
 	CXXFLAGS="${optflags}" \
 	LDFLAGS="${linkflags}"
 
-make all --jobs
+make all --jobs="${max_jobs}"
 make install
 
 sed -i 's/#include <stdint.h>/#include <stdint.h>\n#include <stdio.h>/g' "${toolchain_directory}/include/mpc.h"
 
 [ -d "${binutils_directory}/build" ] || mkdir "${binutils_directory}/build"
 
-declare -r targets=(
+declare -r all_openbsd_targets=(
 	'hppa'
 	'alpha'
 	'amd64'
 	'i386'
 )
+
+# Optional 2nd arg restricts the loop to a single OpenBSD target, so CI can
+# matrix this across runners instead of building all 4 serially in one job.
+# Falls back to all 4 for local/manual use, unchanged from before.
+declare -a targets
+if [ -n "${2:-}" ]; then
+	targets=("${2}")
+else
+	targets=("${all_openbsd_targets[@]}")
+fi
 
 for target in "${targets[@]}"; do
 	case "${target}" in
@@ -199,8 +209,15 @@ for target in "${targets[@]}"; do
 			declare triplet='alpha-unknown-openbsd';;
 	esac
 	
-	wget --no-verbose "https://mirrors.ucr.ac.cr/pub/OpenBSD/7.9/${target}/base79.tgz" --output-document='/tmp/base.tgz'
-	wget --no-verbose "https://mirrors.ucr.ac.cr/pub/OpenBSD/7.9/${target}/comp79.tgz" --output-document='/tmp/comp.tgz'
+	declare base_tarball="/tmp/base-${target}.tgz"
+	declare comp_tarball="/tmp/comp-${target}.tgz"
+
+	if ! [ -f "${base_tarball}" ]; then
+		wget --no-verbose "https://mirrors.gigenet.com/pub/OpenBSD/7.9/${target}/base79.tgz" --output-document="${base_tarball}"
+	fi
+	if ! [ -f "${comp_tarball}" ]; then
+		wget --no-verbose "https://mirrors.gigenet.com/pub/OpenBSD/7.9/${target}/comp79.tgz" --output-document="${comp_tarball}"
+	fi
 	
 	cd "${binutils_directory}/build"
 	rm --force --recursive ./*
@@ -224,8 +241,8 @@ for target in "${targets[@]}"; do
 	make all --jobs="${max_jobs}"
 	make install
 	
-	tar --directory="${toolchain_directory}/${triplet}" --strip=2 --extract --file='/tmp/base.tgz' './usr/lib' './usr/include'
-	tar --directory="${toolchain_directory}/${triplet}" --strip=2 --extract --file='/tmp/comp.tgz' './usr/lib' './usr/include'
+	tar --directory="${toolchain_directory}/${triplet}" --strip=2 --extract --file="${base_tarball}" './usr/lib' './usr/include'
+	tar --directory="${toolchain_directory}/${triplet}" --strip=2 --extract --file="${comp_tarball}" './usr/lib' './usr/include'
 	
 	cd "${toolchain_directory}/${triplet}/lib"
 	
