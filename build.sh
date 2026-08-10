@@ -71,6 +71,10 @@ if ! [ -f "${gcc_tarball}" ]; then
 	tar --directory="$(dirname "${gcc_directory}")" --extract --file="${gcc_tarball}"
 fi
 
+if ! grep --quiet '__builtin_alloca' "${gcc_directory}/libssp/ssp.c"; then
+	sed -i '1i#ifndef HAVE_ALLOCA_H\n#define alloca __builtin_alloca\n#endif' "${gcc_directory}/libssp/ssp.c"
+fi
+
 [ -d "${gcc_directory}/build" ] || mkdir "${gcc_directory}/build"
 
 declare -r toolchain_directory="/tmp/atar"
