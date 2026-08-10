@@ -17,7 +17,7 @@ declare -r binutils_tarball='/tmp/binutils.tar.xz'
 declare -r binutils_directory='/tmp/binutils-2.46.1'
 
 declare -r gcc_tarball='/tmp/gcc.tar.xz'
-declare -r gcc_directory='/tmp/gcc-16.2.0'
+declare -r gcc_directory='/tmp/gcc-16.1.0'
 
 declare -r optflags='-Os'
 declare -r linkflags='-Wl,-s'
@@ -103,7 +103,7 @@ if ! [ -d "${binutils_directory}" ]; then
 fi
 
 if ! [ -f "${gcc_tarball}" ]; then
-	wget --no-verbose 'https://ftp.gnu.org/gnu/gcc/gcc-16.2.0/gcc-16.2.0.tar.xz' --output-document="${gcc_tarball}"
+	wget --no-verbose 'https://ftp.gnu.org/gnu/gcc/gcc-16.1.0/gcc-16.1.0.tar.xz' --output-document="${gcc_tarball}"
 fi
 if ! [ -d "${gcc_directory}" ]; then
 	tar --directory="$(dirname "${gcc_directory}")" --extract --file="${gcc_tarball}"
